@@ -1,0 +1,112 @@
+version: '3.8'
+
+services:
+  # PostgreSQL + TimescaleDB
+  db:
+    image: timescale/timescaledb:latest-pg15
+    container_name: cenex-db
+    environment:
+      POSTGRES_USER: cenex
+      POSTGRES_PASSWORD: cenex_secure_2024
+      POSTGRES_DB: cenex_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cenex"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: cenex-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cenex-backend
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://cenex:cenex_secure_2024@db:5432/cenex_ai
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=dev-secret-key-change-in-production
+      - ENVIRONMENT=development
+      - DEBUG=True
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker (for background tasks)
+  celery:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cenex-celery
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://cenex:cenex_secure_2024@db:5432/cenex_ai
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=dev-secret-key-change-in-production
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./backend:/app
+    command: celery -A app.tasks.celery_app worker --loglevel=info
+
+  # Celery Beat (for scheduled tasks)
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cenex-celery-beat
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://cenex:cenex_secure_2024@db:5432/cenex_ai
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=dev-secret-key-change-in-production
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./backend:/app
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cenex-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: npm run dev
+
+volumes:
+  postgres_data:
+  redis_data:
