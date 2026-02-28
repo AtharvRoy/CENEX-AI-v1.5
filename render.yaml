@@ -1,21 +1,5 @@
 services:
-  # PostgreSQL Database
-  - type: pserv
-    name: cenex-db
-    env: docker
-    plan: free
-    disk:
-      name: cenex-db-data
-      mountPath: /var/lib/postgresql/data
-      sizeGB: 1
-
-  # Redis
-  - type: redis
-    name: cenex-redis
-    plan: free
-    maxmemoryPolicy: allkeys-lru
-
-  # Backend (FastAPI)
+  # Backend (FastAPI) - Free tier
   - type: web
     name: cenex-backend
     runtime: docker
@@ -23,15 +7,6 @@ services:
     dockerContext: ./backend
     plan: free
     envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: cenex-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: cenex-redis
-          property: connectionString
       - key: SECRET_KEY
         generateValue: true
       - key: ALGORITHM
@@ -42,11 +17,9 @@ services:
         value: production
       - key: DEBUG
         value: False
-      - key: PORT
-        value: 8000
     healthCheckPath: /health
 
-  # Frontend (Next.js)
+  # Frontend (Next.js) - Free tier
   - type: web
     name: cenex-frontend
     runtime: docker
@@ -59,3 +32,15 @@ services:
           type: web
           name: cenex-backend
           envVarKey: RENDER_EXTERNAL_URL
+
+databases:
+  # PostgreSQL - Free tier (no disk persistence on free)
+  - name: cenex-db
+    plan: free
+    databaseName: cenex_ai
+    user: cenex
+
+  # Redis - Free tier with IP allowlist
+  - name: cenex-redis
+    plan: free
+    ipAllowList: []
