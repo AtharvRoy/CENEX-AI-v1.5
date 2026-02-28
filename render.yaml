@@ -1,0 +1,61 @@
+services:
+  # PostgreSQL Database
+  - type: pserv
+    name: cenex-db
+    env: docker
+    plan: free
+    disk:
+      name: cenex-db-data
+      mountPath: /var/lib/postgresql/data
+      sizeGB: 1
+
+  # Redis
+  - type: redis
+    name: cenex-redis
+    plan: free
+    maxmemoryPolicy: allkeys-lru
+
+  # Backend (FastAPI)
+  - type: web
+    name: cenex-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cenex-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: cenex-redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 30
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: False
+      - key: PORT
+        value: 8000
+    healthCheckPath: /health
+
+  # Frontend (Next.js)
+  - type: web
+    name: cenex-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: free
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: cenex-backend
+          envVarKey: RENDER_EXTERNAL_URL
